@@ -11,6 +11,10 @@ concurrency:
   group: ticket-monitor
   cancel-in-progress: false
 
+permissions:
+  contents: read
+  statuses: write  # para publicar el resultado como commit status (lo lee el dashboard)
+
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -41,6 +45,7 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           HEARTBEAT_HOURS: "1"
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python monitor.py --once
 
       - name: Guardar estado

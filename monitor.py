@@ -22,6 +22,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import List
 
+import requests
 from dotenv import load_dotenv
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
@@ -174,6 +175,7 @@ DEFAULT_STATE = {
     "last_confirmed_iso": None,
     "last_check_status": None,  # resultado crudo de la última corrida (incluye blocked/unknown)
     "last_check_iso": None,
+    "last_check_detail": None,  # texto/clase del widget detectado en la última corrida
     "last_heartbeat_iso": None,
     "telegram_update_offset": None,  # offset de getUpdates, para no reprocesar mensajes viejos
 }
@@ -200,8 +202,8 @@ def save_snapshot(snapshot_dir: Path, status: str, html: str) -> None:
     logger.info("Snapshot guardado en %s (revisa el HTML para ajustar los patrones de detección)", path)
 
 
-def check_event_page(config: Config) -> str:
-    """Carga la página una vez y devuelve el estado clasificado."""
+def check_event_page(config: Config):
+    """Carga la página una vez y devuelve (estado, texto_detectado)."""
     config.browser_state_dir.mkdir(parents=True, exist_ok=True)
 
     with sync_playwright() as p:
@@ -236,7 +238,7 @@ def check_event_page(config: Config) -> str:
             if status in (STATUS_BLOCKED, STATUS_UNKNOWN):
                 save_snapshot(config.snapshot_dir, status, page.content())
 
-            return status
+            return status, status_text
         finally:
             context.close()
 
@@ -264,21 +266,62 @@ def maybe_send_heartbeat(config: Config, state: dict) -> None:
         state["last_heartbeat_iso"] = now.isoformat()
 
 
+def publish_github_status(status: str, detail: str) -> None:
+    """Publica el resultado como un "commit status" de GitHub, para que un
+    dashboard externo pueda leer el historial vía la API pública de GitHub
+    (sin depender de descargar logs, que tienen problemas de CORS en el
+    navegador). No hace nada si no corremos dentro de GitHub Actions."""
+    token = os.environ.get("GITHUB_TOKEN")
+    repo = os.environ.get("GITHUB_REPOSITORY")
+    sha = os.environ.get("GITHUB_SHA")
+    if not (token and repo and sha):
+        return
+
+    state_map = {STATUS_AVAILABLE: "success", STATUS_SOLD_OUT: "pending"}
+    gh_state = state_map.get(status, "error")
+
+    run_id = os.environ.get("GITHUB_RUN_ID", "")
+    server = os.environ.get("GITHUB_SERVER_URL", "https://github.com")
+    payload = {
+        "state": gh_state,
+        "context": "ticket-monitor",
+        "description": f"{status}: {detail}".strip()[:140],
+    }
+    if run_id:
+        payload["target_url"] = f"{server}/{repo}/actions/runs/{run_id}"
+
+    try:
+        requests.post(
+            f"https://api.github.com/repos/{repo}/statuses/{sha}",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github+json",
+            },
+            json=payload,
+            timeout=10,
+        )
+    except requests.RequestException:
+        logger.exception("No se pudo publicar el commit status en GitHub")
+
+
 def run_once(config: Config, check_telegram: bool = True) -> str:
     state = load_state(config.state_file)
     previous_confirmed = state.get("last_confirmed_status")
 
     try:
-        status = check_event_page(config)
+        status, status_text = check_event_page(config)
     except Exception:
         logger.exception("Error al revisar la página; se reintentará en el siguiente ciclo")
-        status = STATUS_UNKNOWN
+        status, status_text = STATUS_UNKNOWN, ""
 
     now_iso = datetime.now(timezone.utc).isoformat()
     state["last_check_status"] = status
     state["last_check_iso"] = now_iso
+    state["last_check_detail"] = status_text
 
     logger.info("Estado detectado: %s (último confirmado: %s)", status, previous_confirmed)
+
+    publish_github_status(status, status_text)
 
     alert_sent = False
     if status == STATUS_AVAILABLE and previous_confirmed != STATUS_AVAILABLE:
