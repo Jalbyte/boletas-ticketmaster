@@ -1,6 +1,6 @@
 name: Monitor de boletas
 
-on:
+"on":
   schedule:
     # Cada 5 minutos (el mínimo permitido por GitHub Actions).
     - cron: "*/5 * * * *"
