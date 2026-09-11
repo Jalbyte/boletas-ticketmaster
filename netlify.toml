@@ -4,3 +4,11 @@
   # en Netlify (Site configuration -> Environment variables). El token real
   # nunca queda en el repositorio.
   command = "sed -i \"s#%%GH_TOKEN%%#$GH_TOKEN#\" dashboard/index.html"
+
+[build.environment]
+  # El dashboard es una pagina 100% cliente: el token DEBE quedar visible en
+  # el HTML publicado para que el navegador pueda llamar a la API de GitHub.
+  # Esto es intencional (ya asumido al elegir "repo privado + token de solo
+  # lectura"), asi que le avisamos al escaner de secretos de Netlify que no
+  # lo bloquee para esta variable puntual.
+  SECRETS_SCAN_OMIT_KEYS = "GH_TOKEN"
