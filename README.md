@@ -1,8 +1,11 @@
 # Monitor de boletas BTS (Ticketmaster Colombia)
 
 Avisa por Telegram si la página del evento pasa de "agotado" a "boletas
-disponibles". **No compra boletas automáticamente** — solo detecta y avisa;
-la compra la haces tú, manualmente, apenas llegue la alerta.
+disponibles" (chequeo cada 5 min vía GitHub Actions, gratis), con un
+comando `/estado` para preguntarle al bot en cualquier momento, y un
+dashboard web (`dashboard/`) para ver el historial de chequeos. **No
+compra boletas automáticamente** — solo detecta y avisa; la compra la
+haces tú, manualmente, apenas llegue la alerta.
 
 ## 1. Crear el bot de Telegram
 
@@ -39,18 +42,56 @@ Para probar que la alerta de Telegram funciona, edita manualmente
 `python monitor.py --once` en un momento en que la página muestre boletas
 disponibles (o edita temporalmente `AVAILABLE_PATTERNS`/el HTML de prueba).
 
-## 4. Desplegar 24/7 en la nube (capa gratuita)
+## 4. Desplegar 24/7 gratis con GitHub Actions
 
-Recomendado: **Railway** o **Fly.io** (soportan un worker Docker
-persistente corriendo todo el tiempo, a diferencia de un cron con ventanas
-de 5+ minutos).
+El monitor corre en `.github/workflows/monitor.yml`, con un cron cada 5
+minutos (el mínimo que permite GitHub Actions) — 100% gratis, sin tarjeta.
 
-1. Sube este proyecto a un repositorio Git (privado si prefieres).
-2. Crea un nuevo servicio en Railway/Fly.io apuntando al repo (usarán el
-   `Dockerfile` automáticamente).
-3. Configura las variables de entorno del servicio (las mismas de `.env`).
-4. Despliega. El proceso queda corriendo el loop de `monitor.py` de forma
-   continua.
+1. Sube este repo a GitHub (privado, recomendado).
+2. En **Settings → Secrets and variables → Actions → Secrets**, agrega:
+   - `TELEGRAM_BOT_TOKEN`
+   - `TELEGRAM_CHAT_ID` (uno o varios separados por coma)
+3. En **Settings → Secrets and variables → Actions → Variables**, agrega
+   `EVENT_URL` con la URL del evento (opcional; si no la pones, usa el
+   valor por defecto ya hardcodeado en `monitor.py`).
+4. Listo — el workflow corre solo. Puedes dispararlo manualmente desde la
+   pestaña **Actions** con "Run workflow" para probarlo de inmediato.
+
+Cada corrida además publica su resultado como un
+["commit status"](https://docs.github.com/rest/commits/statuses) de GitHub
+(contexto `ticket-monitor`) — esto es lo que lee el dashboard (ver abajo).
+
+## 5. Dashboard en vivo (Netlify o Vercel)
+
+`dashboard/index.html` es una página estática (sin backend) que lee el
+historial de chequeos directamente de la API de GitHub y lo muestra en una
+tabla, con un login simple (correo/contraseña hardcodeados en el HTML —
+**no es seguridad real**, es solo para que no cualquiera con el link entre).
+
+Necesita un **token de GitHub de solo lectura**, con permiso **"Commit
+statuses: Read-only"** sobre este repo únicamente
+(créalo en https://github.com/settings/personal-access-tokens/new). El
+token **no se sube a git** — `dashboard/index.html` tiene un placeholder
+(`%%GH_TOKEN%%`) que se reemplaza en tiempo de build leyendo una variable
+de entorno `GH_TOKEN` que configuras en el proveedor de despliegue.
+
+**Desplegar en Netlify:**
+1. "Add new site" → "Import an existing project" → conecta este repo.
+2. En **Site configuration → Environment variables**, agrega `GH_TOKEN`
+   con el valor del token.
+3. Ya incluye `netlify.toml` (publica `dashboard/` y hace el reemplazo del
+   token en el build) — no hace falta configurar nada más.
+
+**Desplegar en Vercel:**
+1. "Add New… → Project" → importa este repo.
+2. En "Root Directory" selecciona `dashboard`.
+3. Framework preset: "Other".
+4. Build command: `sed -i "s#%%GH_TOKEN%%#$GH_TOKEN#" index.html`
+5. En **Settings → Environment Variables**, agrega `GH_TOKEN` con el valor
+   del token.
+
+Si alguna vez regeneras el token, solo actualiza la variable de entorno en
+Netlify/Vercel y vuelve a desplegar — no hay que tocar el código.
 
 ## Notas importantes
 

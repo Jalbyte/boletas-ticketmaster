@@ -1,0 +1,6 @@
+[build]
+  publish = "dashboard"
+  # Sustituye el placeholder por la variable de entorno GH_TOKEN configurada
+  # en Netlify (Site configuration -> Environment variables). El token real
+  # nunca queda en el repositorio.
+  command = "sed -i \"s#%%GH_TOKEN%%#$GH_TOKEN#\" dashboard/index.html"

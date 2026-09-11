@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Panel en vivo del estado de boletas para BTS en Bogotá, leído directamente desde el historial de chequeos de GitHub Actions.">
+<meta name="robots" content="noindex, nofollow">
+<title>Boletería BTS</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root{
+    color-scheme: light dark;
+    --bg:#F5F3F7; --surface:#FFFFFF; --surface-2:#FAF9FC; --border:#E1DEE8;
+    --text:#1E1C24; --muted:#6B6878;
+    --accent:#B9822A; --accent-ink:#FFFFFF;
+    --success:#2F9E5B; --success-bg:#E4F5EB;
+    --pending:#5B5E6B; --pending-bg:#ECEBEF;
+    --warning:#C15F1F; --warning-bg:#FBEBDD;
+    --error:#C13B3E; --error-bg:#FBE7E7;
+    --shadow:0 1px 2px rgba(30,28,36,.06), 0 8px 24px rgba(30,28,36,.06);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#16151C; --surface:#201F28; --surface-2:#26242F; --border:#34323F;
+      --text:#F1EEEA; --muted:#9A96A6;
+      --accent:#E8B34A; --accent-ink:#201506;
+      --success:#55D690; --success-bg:rgba(85,214,144,.12);
+      --pending:#9A9DB0; --pending-bg:rgba(154,157,176,.12);
+      --warning:#F2A75E; --warning-bg:rgba(242,167,94,.12);
+      --error:#F17679; --error-bg:rgba(241,118,121,.12);
+      --shadow:0 1px 2px rgba(0,0,0,.35), 0 12px 32px rgba(0,0,0,.4);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#16151C; --surface:#201F28; --surface-2:#26242F; --border:#34323F;
+    --text:#F1EEEA; --muted:#9A96A6;
+    --accent:#E8B34A; --accent-ink:#201506;
+    --success:#55D690; --success-bg:rgba(85,214,144,.12);
+    --pending:#9A9DB0; --pending-bg:rgba(154,157,176,.12);
+    --warning:#F2A75E; --warning-bg:rgba(242,167,94,.12);
+    --error:#F17679; --error-bg:rgba(241,118,121,.12);
+    --shadow:0 1px 2px rgba(0,0,0,.35), 0 12px 32px rgba(0,0,0,.4);
+  }
+
+  *{box-sizing:border-box;}
+  html,body{margin:0; padding:0;}
+  body{
+    background:var(--bg); color:var(--text);
+    font-family:"IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+    min-height:100vh;
+  }
+  img{max-width:100%;}
+  .mono{font-family:"IBM Plex Mono", ui-monospace, monospace;}
+  .display{font-family:"Big Shoulders Display", "Arial Narrow", sans-serif; font-weight:800; letter-spacing:.01em;}
+
+  a{color:var(--accent);}
+
+  /* ---------- Login gate ---------- */
+  #gate{
+    min-height:100vh; display:flex; align-items:center; justify-content:center;
+    padding:24px;
+  }
+  .gate-card{
+    width:100%; max-width:360px; background:var(--surface); border:1px solid var(--border);
+    border-radius:14px; padding:32px 28px; box-shadow:var(--shadow);
+  }
+  .gate-eyebrow{
+    font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:var(--accent);
+    font-weight:600; margin:0 0 6px;
+  }
+  .gate-title{
+    font-size:34px; line-height:1; margin:0 0 22px; text-wrap:balance;
+  }
+  .field{display:flex; flex-direction:column; gap:6px; margin-bottom:14px;}
+  .field label{font-size:12px; color:var(--muted); font-weight:500;}
+  .field input{
+    font:inherit; font-size:15px; padding:10px 12px; border-radius:8px;
+    border:1px solid var(--border); background:var(--surface-2); color:var(--text);
+    width:100%;
+  }
+  .field input:focus{outline:2px solid var(--accent); outline-offset:1px;}
+  .gate-error{
+    font-size:13px; color:var(--error); min-height:18px; margin:-4px 0 10px;
+  }
+  .btn{
+    font:inherit; font-size:15px; font-weight:600; padding:11px 16px; border-radius:8px;
+    border:none; cursor:pointer; width:100%;
+    background:var(--accent); color:var(--accent-ink);
+  }
+  .btn:focus-visible{outline:2px solid var(--text); outline-offset:2px;}
+
+  /* ---------- Dashboard ---------- */
+  #dash{display:none; max-width:960px; margin:0 auto; padding:28px 20px 60px;}
+  header.top{
+    display:flex; flex-wrap:wrap; gap:24px; align-items:flex-end; justify-content:space-between;
+    padding-bottom:22px; border-bottom:1px solid var(--border); margin-bottom:22px;
+  }
+  .eyebrow{
+    font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted);
+    font-weight:600; margin:0 0 4px;
+  }
+  .event-name{font-size:15px; color:var(--muted); margin:2px 0 0;}
+  .status-readout{font-size:56px; line-height:.95; margin:2px 0 0; text-wrap:balance;}
+  .status-readout.success{color:var(--success);}
+  .status-readout.pending{color:var(--pending);}
+  .status-readout.warning{color:var(--warning);}
+  .status-readout.error{color:var(--error);}
+
+  .top-actions{display:flex; flex-direction:column; align-items:flex-end; gap:10px;}
+  .cta{
+    display:inline-flex; align-items:center; gap:8px; text-decoration:none;
+    font-weight:600; font-size:14px; padding:10px 16px; border-radius:8px;
+    background:var(--accent); color:var(--accent-ink);
+  }
+  .refresh-line{
+    display:flex; align-items:center; gap:8px; font-size:12px; color:var(--muted);
+  }
+  .dot{width:7px; height:7px; border-radius:50%; background:var(--success); flex:none;}
+  .dot.stale{background:var(--muted);}
+  @keyframes pulse{0%,100%{opacity:1;}50%{opacity:.35;}}
+  .dot.live{animation:pulse 2s ease-in-out infinite;}
+  .icon-btn{
+    background:none; border:1px solid var(--border); color:var(--text); border-radius:6px;
+    padding:4px 9px; font-size:12px; cursor:pointer; font-family:inherit;
+  }
+  .icon-btn:hover{border-color:var(--accent);}
+
+  .tiles{
+    display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:14px;
+    margin-bottom:26px;
+  }
+  .tile{
+    background:var(--surface); border:1px solid var(--border); border-radius:12px;
+    padding:16px 18px;
+  }
+  .tile-label{font-size:12px; color:var(--muted); margin:0 0 6px; font-weight:500;}
+  .tile-value{font-size:24px; font-weight:600; margin:0;}
+  .tile-value.mono{font-size:20px;}
+
+  .panel{
+    background:var(--surface); border:1px solid var(--border); border-radius:12px;
+    overflow:hidden;
+  }
+  .panel-head{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:14px 18px; border-bottom:1px solid var(--border);
+  }
+  .panel-head h2{font-size:15px; margin:0; font-weight:600;}
+
+  .table-scroll{overflow-x:auto;}
+  table{width:100%; border-collapse:collapse; font-size:13.5px; min-width:560px;}
+  thead th{
+    text-align:left; font-weight:500; color:var(--muted); font-size:11.5px;
+    letter-spacing:.06em; text-transform:uppercase; padding:10px 18px;
+    border-bottom:1px solid var(--border); white-space:nowrap;
+  }
+  tbody td{padding:11px 18px; border-bottom:1px solid var(--border); vertical-align:top;}
+  tbody tr:last-child td{border-bottom:none;}
+  tbody tr:hover{background:var(--surface-2);}
+  td.time{white-space:nowrap; color:var(--muted);}
+  td.detail{color:var(--text); max-width:360px;}
+  td.link{white-space:nowrap; text-align:right;}
+  td.link a{font-size:12.5px; text-decoration:none;}
+  td.link a:hover{text-decoration:underline;}
+
+  .badge{
+    display:inline-flex; align-items:center; gap:6px; padding:3px 10px; border-radius:99px;
+    font-size:12px; font-weight:600; white-space:nowrap;
+  }
+  .badge.success{background:var(--success-bg); color:var(--success);}
+  .badge.pending{background:var(--pending-bg); color:var(--pending);}
+  .badge.warning{background:var(--warning-bg); color:var(--warning);}
+  .badge.error{background:var(--error-bg); color:var(--error);}
+
+  .empty, .error-banner{padding:28px 18px; text-align:center; color:var(--muted); font-size:14px;}
+  .error-banner{color:var(--error);}
+
+  footer.foot{margin-top:22px; font-size:12px; color:var(--muted); line-height:1.6;}
+  [hidden]{display:none !important;}
+</style>
+</head>
+<body>
+
+<div id="gate">
+  <form class="gate-card" id="gate-form" autocomplete="off">
+    <p class="gate-eyebrow">Acceso privado</p>
+    <h1 class="gate-title display">Boletería<br>BTS</h1>
+    <div class="field">
+      <label for="gate-email">Correo</label>
+      <input id="gate-email" type="email" autocomplete="username" required>
+    </div>
+    <div class="field">
+      <label for="gate-pass">Contraseña</label>
+      <input id="gate-pass" type="password" autocomplete="current-password" required>
+    </div>
+    <p class="gate-error" id="gate-error" role="alert"></p>
+    <button class="btn" type="submit">Ingresar</button>
+  </form>
+</div>
+
+<div id="dash">
+  <header class="top">
+    <div>
+      <p class="eyebrow">Boletería · monitor en vivo</p>
+      <h1 class="status-readout display" id="status-readout">—</h1>
+      <p class="event-name">BTS World Tour · viernes 2 de octubre de 2026 · Estadio El Campín</p>
+    </div>
+    <div class="top-actions">
+      <a class="cta" id="ticket-link" href="https://www.ticketmaster.co/event/bts-world-tour-venta-general-viernes-2-octubre" target="_blank" rel="noopener">Ir a Ticketmaster ↗</a>
+      <div class="refresh-line">
+        <span class="dot live" id="refresh-dot"></span>
+        <span id="refresh-label">actualizando…</span>
+        <button class="icon-btn" id="refresh-btn" type="button">Actualizar ahora</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="tiles">
+    <div class="tile">
+      <p class="tile-label">Última verificación</p>
+      <p class="tile-value mono" id="tile-last">—</p>
+    </div>
+    <div class="tile">
+      <p class="tile-label">Próxima revisión</p>
+      <p class="tile-value mono" id="tile-next">—</p>
+    </div>
+    <div class="tile">
+      <p class="tile-label">Chequeos mostrados</p>
+      <p class="tile-value" id="tile-count">—</p>
+    </div>
+    <div class="tile">
+      <p class="tile-label">Veces "disponible"</p>
+      <p class="tile-value" id="tile-available">—</p>
+    </div>
+  </div>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Historial de chequeos (cron cada 5 min)</h2>
+    </div>
+    <div id="panel-body">
+      <div class="empty">Cargando historial desde GitHub…</div>
+    </div>
+  </section>
+
+  <footer class="foot">
+    Datos leídos en vivo desde los "commit statuses" del repositorio privado
+    <code class="mono">Jalbyte/boletas-ticketmaster</code> vía un token de GitHub de solo
+    lectura. El chequeo real de Ticketmaster corre cada 5 minutos en GitHub Actions,
+    independiente de este panel.
+  </footer>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // -------- Config --------
+  // Se reemplaza en tiempo de build por el comando `sed` de netlify.toml /
+  // el build command de Vercel, leyendo la variable de entorno GH_TOKEN
+  // configurada en el panel del proveedor. Nunca se commitea el valor real.
+  var GH_TOKEN = "%%GH_TOKEN%%";
+  var REPO = "Jalbyte/boletas-ticketmaster";
+  var REF = "master";
+  var CONTEXT = "ticket-monitor";
+  var PAGE_SIZE = 30;
+  var REFRESH_MS = 60000;
+  var CHECK_INTERVAL_MIN = 5;
+  var AUTH_KEY = "boleteria_bts_authed";
+  var VALID_EMAIL = "admin@gmail.com";
+  var VALID_PASS = "admin123@";
+
+  var STATUS_META = {
+    available:       {label:"DISPONIBLE",  badge:"success", pill:"Disponible"},
+    sold_out:        {label:"AGOTADO",     badge:"pending", pill:"Agotado"},
+    blocked_unknown: {label:"BLOQUEADO",   badge:"warning", pill:"Bloqueado"},
+    unknown:         {label:"DESCONOCIDO", badge:"error",   pill:"Desconocido"}
+  };
+  function metaFor(status){
+    return STATUS_META[status] || {label:(status||"SIN DATOS").toUpperCase(), badge:"pending", pill:status||"—"};
+  }
+
+  // -------- Gate --------
+  var gate = document.getElementById("gate");
+  var dash = document.getElementById("dash");
+  var gateForm = document.getElementById("gate-form");
+  var gateError = document.getElementById("gate-error");
+
+  function showDashboard(){
+    gate.style.display = "none";
+    dash.style.display = "block";
+    boot();
+  }
+
+  try {
+    if (localStorage.getItem(AUTH_KEY) === "1") {
+      showDashboard();
+    }
+  } catch (e) { /* localStorage no disponible: se queda en el login */ }
+
+  gateForm.addEventListener("submit", function(ev){
+    ev.preventDefault();
+    var email = document.getElementById("gate-email").value.trim().toLowerCase();
+    var pass = document.getElementById("gate-pass").value;
+    if (email === VALID_EMAIL && pass === VALID_PASS) {
+      gateError.textContent = "";
+      try { localStorage.setItem(AUTH_KEY, "1"); } catch (e) {}
+      showDashboard();
+    } else {
+      gateError.textContent = "Correo o contraseña incorrectos.";
+    }
+  });
+
+  // -------- Dashboard data --------
+  var booted = false;
+  var latestItems = [];
+
+  function boot(){
+    if (booted) return;
+    booted = true;
+    if (GH_TOKEN.indexOf("%%") === 0) {
+      document.getElementById("panel-body").innerHTML =
+        '<div class="error-banner">Falta configurar la variable de entorno GH_TOKEN ' +
+        'en el proveedor de despliegue (Netlify/Vercel) — ver README.md.</div>';
+      setRefreshState("error");
+      return;
+    }
+    fetchStatuses();
+    setInterval(fetchStatuses, REFRESH_MS);
+    document.getElementById("refresh-btn").addEventListener("click", function(){
+      fetchStatuses();
+    });
+    setInterval(renderTimers, 15000);
+  }
+
+  function fetchStatuses(){
+    setRefreshState("loading");
+    fetch("https://api.github.com/repos/" + REPO + "/commits/" + REF + "/statuses?per_page=" + PAGE_SIZE, {
+      headers: {
+        "Authorization": "Bearer " + GH_TOKEN,
+        "Accept": "application/vnd.github+json"
+      }
+    }).then(function(res){
+      if (!res.ok) {
+        return res.json().catch(function(){ return {}; }).then(function(body){
+          throw new Error((body && body.message) || ("HTTP " + res.status));
+        });
+      }
+      return res.json();
+    }).then(function(data){
+      var items = (data || [])
+        .filter(function(s){ return s.context === CONTEXT; })
+        .sort(function(a, b){ return new Date(b.created_at) - new Date(a.created_at); })
+        .map(parseEntry);
+      latestItems = items;
+      renderAll(items);
+      setRefreshState("ok");
+    }).catch(function(err){
+      renderError(err.message || String(err));
+      setRefreshState("error");
+    });
+  }
+
+  function parseEntry(s){
+    var desc = s.description || "";
+    var sep = desc.indexOf(": ");
+    var status = sep === -1 ? desc : desc.slice(0, sep);
+    var detail = sep === -1 ? "" : desc.slice(sep + 2);
+    return {
+      status: status,
+      detail: detail,
+      created_at: s.created_at,
+      target_url: s.target_url
+    };
+  }
+
+  function setRefreshState(state){
+    var dot = document.getElementById("refresh-dot");
+    var label = document.getElementById("refresh-label");
+    dot.classList.remove("stale", "live");
+    if (state === "loading") {
+      dot.classList.add("live");
+      label.textContent = "actualizando…";
+    } else if (state === "error") {
+      dot.classList.add("stale");
+      label.textContent = "error al actualizar";
+    } else {
+      dot.classList.add("live");
+      label.textContent = "en vivo · cada " + (REFRESH_MS/1000) + "s";
+    }
+  }
+
+  function renderError(message){
+    document.getElementById("panel-body").innerHTML =
+      '<div class="error-banner">No se pudo leer el historial (' + escapeHtml(message) +
+      '). Revisa que el token siga vigente y con permiso "Commit statuses: Read-only".</div>';
+  }
+
+  function renderAll(items){
+    if (!items.length) {
+      document.getElementById("panel-body").innerHTML = '<div class="empty">Todavía no hay chequeos registrados.</div>';
+      document.getElementById("status-readout").textContent = "SIN DATOS";
+      document.getElementById("status-readout").className = "status-readout display pending";
+      return;
+    }
+
+    var latest = items[0];
+    var meta = metaFor(latest.status);
+    var readout = document.getElementById("status-readout");
+    readout.textContent = meta.label;
+    readout.className = "status-readout display " + meta.badge;
+
+    var ticketLink = document.getElementById("ticket-link");
+    ticketLink.textContent = latest.status === "available" ? "¡Comprar ahora! ↗" : "Ir a Ticketmaster ↗";
+
+    var availableCount = items.filter(function(i){ return i.status === "available"; }).length;
+    document.getElementById("tile-count").textContent = items.length;
+    document.getElementById("tile-available").textContent = availableCount;
+
+    renderTimers();
+
+    var rows = items.map(function(item){
+      var m = metaFor(item.status);
+      return "<tr>" +
+        '<td class="time mono">' + escapeHtml(formatTime(item.created_at)) + "</td>" +
+        '<td><span class="badge ' + m.badge + '">' + escapeHtml(m.pill) + "</span></td>" +
+        '<td class="detail mono" title="' + escapeHtml(item.detail) + '">' + escapeHtml(truncate(item.detail, 70)) + "</td>" +
+        '<td class="link">' + (item.target_url ? '<a href="' + item.target_url + '" target="_blank" rel="noopener">Ver run ↗</a>' : "—") + "</td>" +
+        "</tr>";
+    }).join("");
+
+    document.getElementById("panel-body").innerHTML =
+      '<div class="table-scroll"><table><thead><tr>' +
+      "<th>Hora</th><th>Estado</th><th>Detalle detectado</th><th></th>" +
+      "</tr></thead><tbody>" + rows + "</tbody></table></div>";
+  }
+
+  function renderTimers(){
+    if (!latestItems.length) return;
+    var last = new Date(latestItems[0].created_at);
+    document.getElementById("tile-last").textContent = relativeTime(last);
+
+    var next = new Date(last.getTime() + CHECK_INTERVAL_MIN * 60000);
+    var diffMs = next - new Date();
+    document.getElementById("tile-next").textContent = diffMs > 0
+      ? "en ~" + Math.max(1, Math.round(diffMs / 60000)) + " min"
+      : "en breve";
+  }
+
+  function relativeTime(date){
+    var diffMin = Math.round((new Date() - date) / 60000);
+    if (diffMin < 1) return "hace instantes";
+    if (diffMin < 60) return "hace " + diffMin + " min";
+    var h = Math.floor(diffMin / 60), m = diffMin % 60;
+    return "hace " + h + "h " + m + "min";
+  }
+
+  function formatTime(iso){
+    var d = new Date(iso);
+    return d.toLocaleString("es-CO", {
+      day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit"
+    });
+  }
+
+  function truncate(str, n){
+    if (!str) return "—";
+    return str.length > n ? str.slice(0, n - 1) + "…" : str;
+  }
+
+  function escapeHtml(str){
+    return String(str == null ? "" : str).replace(/[&<>"']/g, function(c){
+      return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];
+    });
+  }
+})();
+</script>
+</body>
+</html>
