@@ -1,0 +1,51 @@
+name: Monitor de boletas
+
+on:
+  schedule:
+    # Cada 5 minutos (el mínimo permitido por GitHub Actions).
+    - cron: "*/5 * * * *"
+  workflow_dispatch: {}
+
+# Evita que dos corridas se pisen si una tarda más de 5 minutos.
+concurrency:
+  group: ticket-monitor
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restaurar estado anterior
+        uses: actions/cache/restore@v4
+        with:
+          path: state.json
+          key: ticket-monitor-state-${{ github.run_id }}
+          restore-keys: |
+            ticket-monitor-state-
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar dependencias
+        run: |
+          pip install -r requirements.txt
+          playwright install --with-deps chromium
+
+      - name: Revisar disponibilidad y comandos de Telegram
+        env:
+          EVENT_URL: ${{ vars.EVENT_URL }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          HEARTBEAT_HOURS: "1"
+        run: python monitor.py --once
+
+      - name: Guardar estado
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: state.json
+          key: ticket-monitor-state-${{ github.run_id }}

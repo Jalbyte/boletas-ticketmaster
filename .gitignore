@@ -1,0 +1,9 @@
+.env
+state.json
+browser_state/
+browser_state.json
+__pycache__/
+*.pyc
+debug_snapshots/
+.venv/
+*.log
