@@ -1,12 +1,9 @@
 name: Monitor de boletas
 
 "on":
-  schedule:
-    # Cada 5 minutos, pero arrancando en el minuto :02 en vez de :00.
-    # GitHub advierte que los cron en minutos "redondos" (:00, :05, :10...)
-    # son los mas congestionados de la plataforma y sufren mas retraso:
-    # https://docs.github.com/actions/using-workflows/events-that-trigger-workflows#schedule
-    - cron: "2-59/5 * * * *"
+  # El `schedule:` nativo de GitHub Actions no estaba disparando (ver
+  # cf-worker/). Un Cloudflare Worker con Cron Trigger llama a este
+  # workflow_dispatch cada 5 min en su lugar — es 100% confiable.
   workflow_dispatch: {}
 
 # Evita que dos corridas se pisen si una tarda más de 5 minutos.

@@ -47,6 +47,17 @@ disponibles (o edita temporalmente `AVAILABLE_PATTERNS`/el HTML de prueba).
 El monitor corre en `.github/workflows/monitor.yml`, con un cron cada 5
 minutos (el mínimo que permite GitHub Actions) — 100% gratis, sin tarjeta.
 
+**Nota:** el `schedule:` nativo de GitHub Actions no disparaba de forma
+confiable. En su lugar, `cf-worker/` tiene un Cloudflare Worker (gratis,
+Cron Triggers no fallan) que cada 5 min llama al `workflow_dispatch` de
+este workflow:
+```bash
+cd cf-worker
+npx wrangler login
+npx wrangler secret put GITHUB_TOKEN   # PAT con permiso "Actions: Read and write" sobre este repo
+npx wrangler deploy
+```
+
 1. Sube este repo a GitHub (privado, recomendado).
 2. En **Settings → Secrets and variables → Actions → Secrets**, agrega:
    - `TELEGRAM_BOT_TOKEN`
